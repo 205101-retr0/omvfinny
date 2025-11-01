@@ -7,10 +7,40 @@
 # Run as root (sudo ./install_omv_jellyfin_local.sh)
 # =========================================================
 
+#
+# wget https://raw.githubusercontent.com/205101-retr0/omvfinny/refs/heads/main/install_omv_jellyfin.sh && chmod +x install_omv_jellyfin.sh && sudo ./install_omv_jellyfin.sh
+#
+
 set -e
 
 if [[ $EUID -ne 0 ]]; then
   echo "❌ Please run as root (sudo ./install_omv_jellyfin_local.sh)"
+  exit 1
+fi
+
+# --- Check Debian version compatibility ---
+echo "🔍 Checking system compatibility..."
+if [ -f /etc/debian_version ]; then
+  DEBIAN_CODENAME=$(lsb_release -cs 2>/dev/null || grep VERSION_CODENAME /etc/os-release | cut -d= -f2 | tr -d '"')
+  if [ -z "$DEBIAN_CODENAME" ]; then
+    # Fallback method using debian_version file
+    DEBIAN_VERSION=$(cat /etc/debian_version)
+    case $DEBIAN_VERSION in
+      11*) DEBIAN_CODENAME="bullseye" ;;
+      12*) DEBIAN_CODENAME="bookworm" ;;
+      *) DEBIAN_CODENAME="unknown" ;;
+    esac
+  fi
+  
+  if [[ "$DEBIAN_CODENAME" != "bookworm" && "$DEBIAN_CODENAME" != "bullseye" ]]; then
+    echo "❌ OpenMediaVault is only supported on Debian Bookworm (12) or Bullseye (11)"
+    echo "   Current system: $DEBIAN_CODENAME"
+    echo "   Please use a supported Debian/Raspberry Pi OS version."
+    exit 1
+  fi
+  echo "✅ System compatibility verified: Debian $DEBIAN_CODENAME"
+else
+  echo "❌ This script requires a Debian-based system (Bookworm or Bullseye)"
   exit 1
 fi
 
@@ -20,23 +50,55 @@ apt update && apt upgrade -y
 echo "📦 Installing prerequisites..."
 apt install -y curl wget sudo apt-transport-https ca-certificates software-properties-common
 
-# --- Install OpenMediaVault ---
-echo "🧱 Installing OpenMediaVault..."
-wget -O - https://github.com/OpenMediaVault-Plugin-Developers/installScript/raw/master/install | sudo bash
-
-echo "✅ OMV installed! Access it at: http://<your_pi_ip>/"
-echo "Login: admin / openmediavault"
+# --- Check if OpenMediaVault is already installed ---
+echo "🔍 Checking for existing OpenMediaVault installation..."
+if command -v omv-confdbadm >/dev/null 2>&1 || [ -f /etc/openmediavault/config.xml ] || dpkg -l | grep -q "openmediavault"; then
+  echo "✅ OpenMediaVault is already installed, skipping installation"
+  OMV_INSTALLED="true"
+else
+  echo "🧱 Installing OpenMediaVault..."
+  wget -O - https://github.com/OpenMediaVault-Plugin-Developers/installScript/raw/master/install | sudo bash
+  echo "✅ OMV installed! Access it at: http://<your_pi_ip>/"
+  echo "Login: admin / openmediavault"
+  OMV_INSTALLED="false"
+fi
 
 # --- Install Docker ---
 echo "🐳 Installing Docker..."
-curl -fsSL https://get.docker.com -o get-docker.sh
-sh get-docker.sh
-usermod -aG docker pi || true
 
-# --- Install Docker Compose ---
-echo "🧩 Installing Docker Compose..."
-apt install -y python3-pip
-pip3 install docker-compose
+# Clean up any conflicting Docker installations
+echo "🧹 Cleaning up any existing Docker configurations..."
+rm -f /etc/apt/sources.list.d/docker.list
+rm -f /etc/apt/sources.list.d/docker.list.save
+rm -f /etc/apt/keyrings/docker.asc
+rm -f /usr/share/keyrings/docker.gpg
+apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
+
+# Install Docker using official method
+echo "📥 Installing Docker from official repository..."
+apt-get update
+apt-get install -y ca-certificates curl gnupg
+
+# Add Docker's official GPG key
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+chmod a+r /etc/apt/keyrings/docker.gpg
+
+# Set up the repository
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Install Docker packages
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Add user to docker group
+usermod -aG docker pi || usermod -aG docker $SUDO_USER || true
+
+# Docker Compose is now installed as a plugin with Docker
+echo "✅ Docker Compose plugin installed with Docker"
 
 # --- Jellyfin setup directories ---
 echo "📂 Creating Jellyfin directories..."
@@ -74,7 +136,7 @@ EOF
 
 # --- Start Jellyfin ---
 cd /srv/jellyfin
-docker-compose up -d
+docker compose up -d
 
 echo ""
 echo "✅ Jellyfin installed and configured!"
