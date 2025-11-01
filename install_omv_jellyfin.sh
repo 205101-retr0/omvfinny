@@ -44,6 +44,13 @@ else
   exit 1
 fi
 
+# --- Clean up any conflicting Docker configurations early ---
+echo "🧹 Cleaning up any existing Docker repository conflicts..."
+rm -f /etc/apt/sources.list.d/docker.list
+rm -f /etc/apt/sources.list.d/docker.list.save
+rm -f /etc/apt/keyrings/docker.asc
+rm -f /usr/share/keyrings/docker.gpg
+
 echo "🚀 Updating system..."
 apt update && apt upgrade -y
 
@@ -66,12 +73,7 @@ fi
 # --- Install Docker ---
 echo "🐳 Installing Docker..."
 
-# Clean up any conflicting Docker installations
-echo "🧹 Cleaning up any existing Docker configurations..."
-rm -f /etc/apt/sources.list.d/docker.list
-rm -f /etc/apt/sources.list.d/docker.list.save
-rm -f /etc/apt/keyrings/docker.asc
-rm -f /usr/share/keyrings/docker.gpg
+# Remove any existing Docker packages
 apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
 
 # Install Docker using official method
