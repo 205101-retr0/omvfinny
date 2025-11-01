@@ -46,10 +46,19 @@ fi
 
 # --- Clean up any conflicting Docker configurations early ---
 echo "🧹 Cleaning up any existing Docker repository conflicts..."
-rm -f /etc/apt/sources.list.d/docker.list
-rm -f /etc/apt/sources.list.d/docker.list.save
+# Remove Docker repository files
+rm -f /etc/apt/sources.list.d/docker.list*
+rm -f /etc/apt/sources.list.d/docker.sources*
+# Remove all Docker GPG keys from various locations
 rm -f /etc/apt/keyrings/docker.asc
+rm -f /etc/apt/keyrings/docker.gpg
 rm -f /usr/share/keyrings/docker.gpg
+rm -f /usr/share/keyrings/docker-archive-keyring.gpg
+# Remove Docker entries from main sources.list
+sed -i '/download\.docker\.com/d' /etc/apt/sources.list
+# Clean apt cache
+apt-get clean
+rm -rf /var/lib/apt/lists/*
 
 echo "🚀 Updating system..."
 apt update && apt upgrade -y
