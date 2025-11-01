@@ -95,6 +95,26 @@ install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 chmod a+r /etc/apt/keyrings/docker.gpg
 
+# Aggressive cleanup of all Docker repositories
+echo "🧹 Performing aggressive Docker repository cleanup..."
+find /etc/apt -type f \( -name "*.list" -o -name "*.sources" \) -exec grep -l "download\.docker\.com" {} \; 2>/dev/null | while read file; do
+  echo "Removing Docker repository file: $file"
+  rm -f "$file"
+done
+
+# Also clean main sources.list again
+sed -i '/download\.docker\.com/d' /etc/apt/sources.list
+
+# Verify cleanup
+echo "🔍 Verifying all Docker repositories are removed..."
+if grep -r "download.docker.com" /etc/apt/ 2>/dev/null; then
+  echo "❌ Still found Docker repositories. Manual cleanup may be needed."
+  echo "Run: find /etc/apt -name '*.list' -o -name '*.sources' | xargs grep -l docker"
+  exit 1
+else
+  echo "✅ All Docker repositories successfully removed"
+fi
+
 # Set up the repository
 echo \
   "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
